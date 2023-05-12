@@ -49,10 +49,10 @@ class material:
 
 
 def parse_library_images(library_node):
-    for img_node in library_node.iter(schema+'image'):
+    for img_node in library_node.iter(f'{schema}image'):
         lib_img = library_image()
         lib_img.id = img_node.get("id")
-        for file_node in img_node.iter(schema+'init_from'):
+        for file_node in img_node.iter(f'{schema}init_from'):
             corrected = file_node.text.replace('\\', '/')
             corrected = corrected.replace('//', '/')
             identifier = dependencies.get_build_config_setting("textures_dir")
@@ -63,7 +63,7 @@ def parse_library_images(library_node):
                 identifier = "../textures/"
                 texture_src = corrected.find(identifier)
             if texture_src != -1:
-                texture_sub_dir = corrected[texture_src + len(identifier):len(corrected)]
+                texture_sub_dir = corrected[texture_src + len(identifier):]
                 texture_bin = os.path.join("data", "textures", texture_sub_dir)
                 lib_img.filename = texture_bin
                 image_list.append(lib_img)
@@ -80,8 +80,8 @@ def parse_library_images(library_node):
             while split_dirs[cur_dir] != "assets" and cur_dir < filename_split:
                 cur_dir += 1
             if cur_dir == len(split_dirs)-1:
-                print("warning: texture not in assets folder " + lib_img.filename)
-                lib_img.filename = "data/textures/" + split_dirs[filename_split]
+                print(f"warning: texture not in assets folder {lib_img.filename}")
+                lib_img.filename = f"data/textures/{split_dirs[filename_split]}"
             else:
                 split_dirs[cur_dir] = "data"
                 while cur_dir < len(split_dirs):
@@ -96,7 +96,11 @@ def parse_library_images(library_node):
 def parse_texture(tex_node):
     tex = texture_map()
     for lib_img in image_list:
-        if lib_img.id + "-sampler" == tex_node.get("texture") or lib_img.id + "-image" == tex_node.get("texture") or lib_img.id == tex_node.get("texture"):
+        if (
+            f"{lib_img.id}-sampler" == tex_node.get("texture")
+            or f"{lib_img.id}-image" == tex_node.get("texture")
+            or lib_img.id == tex_node.get("texture")
+        ):
             tex.filename = lib_img.filename
             break
     return tex
@@ -105,51 +109,53 @@ def parse_texture(tex_node):
 def parse_light_component(component_node):
     tex = None
     col = "1.0 1.0 1.0 1.0"
-    for col_node in component_node.iter(schema+'color'):
+    for col_node in component_node.iter(f'{schema}color'):
         col = col_node.text
-    for tex_node in component_node.iter(schema+'texture'):
+    for tex_node in component_node.iter(f'{schema}texture'):
         tex = parse_texture(tex_node)
     return col, tex
 
 
 def parse_effect(effect):
     output_material = material()
-    for param in effect.iter(schema+'diffuse'):
+    for param in effect.iter(f'{schema}diffuse'):
         col_out, tex_out = parse_light_component(param)
         output_material.diffuse_colour = col_out
         output_material.diffuse_map = tex_out
-    for param in effect.iter(schema+'specular'):
+    for param in effect.iter(f'{schema}specular'):
         col_out, tex_out = parse_light_component(param)
         output_material.specular_colour = col_out
         output_material.specular_map = tex_out
     output_material.shininess = "1.0"
-    for param in effect.iter(schema+'shininess'):
-        for f in param.iter(schema+'float'):
+    for param in effect.iter(f'{schema}shininess'):
+        for f in param.iter(f'{schema}float'):
             output_material.shininess = f.text
     output_material.reflectivity = "1.0"
-    for param in effect.iter(schema+'reflectivity'):
-        for f in param.iter(schema+'float'):
+    for param in effect.iter(f'{schema}reflectivity'):
+        for f in param.iter(f'{schema}float'):
             output_material.reflectivity = f.text
-    for bump in effect.iter(schema+'bump'):
-        for tex_node in bump.iter(schema+'texture'):
+    for bump in effect.iter(f'{schema}bump'):
+        for tex_node in bump.iter(f'{schema}texture'):
             output_material.normal_map = parse_texture(tex_node)
     return output_material
 
 
 def parse_materials(dae_root, materials_root):
-    # find effects library
-    library_effects = None
-    for child in dae_root:
-        if child.tag.find("library_effects") != -1:
-            library_effects = child
-            break
-    if(library_effects == None):
+    library_effects = next(
+        (
+            child
+            for child in dae_root
+            if child.tag.find("library_effects") != -1
+        ),
+        None,
+    )
+    if library_effects is None:
         return
-    for mat in materials_root.iter(schema+'material'):
+    for mat in materials_root.iter(f'{schema}material'):
         effect_id = None
-        for fx_instance in mat.iter(schema+'instance_effect'):
+        for fx_instance in mat.iter(f'{schema}instance_effect'):
             effect_id = fx_instance.get("url").replace("#", "")
-        for effect in library_effects.iter(schema+'effect'):
+        for effect in library_effects.iter(f'{schema}effect'):
             if effect.get("id").find(effect_id) != -1:
                 new_mat = parse_effect(effect)
                 new_mat.id = effect_id.replace("-fx","")
@@ -189,5 +195,5 @@ def write_material_file(mat):
 
 def pack_texture(output, tex):
     [fnoext, fext] = os.path.splitext(tex)
-    tex = fnoext + ".dds"
+    tex = f"{fnoext}.dds"
     helpers.pack_parsable_string(output, tex)

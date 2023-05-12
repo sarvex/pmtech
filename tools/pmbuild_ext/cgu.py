@@ -31,11 +31,10 @@ def remove_comments(source):
     for line in lines:
         if inside_block:
             ecpos = line.find("*/")
-            if ecpos != -1:
-                inside_block = False
-                line = line[ecpos+2:]
-            else:
+            if ecpos == -1:
                 continue
+            inside_block = False
+            line = line[ecpos+2:]
         cpos = line.find("//")
         mcpos = line.find("/*")
         if cpos != -1:
@@ -57,15 +56,11 @@ def display_name(token, title):
             break
     spaced = ""
     for i in range(len(token)):
-        if i > 0:
-            if token[i-1].islower() and token[i].isupper():
-                spaced += " "
+        if i > 0 and token[i - 1].islower() and token[i].isupper():
+            spaced += " "
         spaced += token[i]
     spaced = spaced.replace("_", " ")
-    if title:
-        spaced = spaced.title()
-    else:
-        spaced = spaced.capitalize()
+    spaced = spaced.title() if title else spaced.capitalize()
     return spaced.strip()
 
 
@@ -74,7 +69,7 @@ def enclose(open_symbol, close_symbol, source, pos):
     pos = source.find(open_symbol, pos)
     stack = [open_symbol]
     pos += 1
-    while len(stack) > 0 and pos < len(source):
+    while stack and pos < len(source):
         if source[pos] == open_symbol:
             stack.append(open_symbol)
         if source[pos] == close_symbol:
@@ -132,8 +127,7 @@ def format_source(source, indent_size):
 # returns the name of a type.. ie struct <name>, enum <name>
 def type_name(type_declaration):
     pos = type_declaration.find("{")
-    name = type_declaration[:pos].strip().split()[1]
-    return name
+    return type_declaration[:pos].strip().split()[1]
 
 
 # tidy source with consistent spaces, remove tabs and comments to make subsequent operations easier
@@ -155,14 +149,14 @@ def sanitize_source(source):
 
 # finds token in source code
 def find_token(token, source):
-    delimiters = [
-        "(", ")", "{", "}", ".", ",", "+", "-", "=", "*", "/",
-        "&", "|", "~", "\n", "\t", "<", ">", "[", "]", ";", " "
-    ]
     fp = source.find(token)
     if fp != -1:
         left = False
         right = False
+        delimiters = [
+            "(", ")", "{", "}", ".", ",", "+", "-", "=", "*", "/",
+            "&", "|", "~", "\n", "\t", "<", ">", "[", "]", ";", " "
+        ]
         # check left
         if fp > 0:
             for d in delimiters:
@@ -184,9 +178,7 @@ def find_token(token, source):
             return fp
         # try again
         tt = find_token(token, source[fp + len(token):])
-        if tt == -1:
-            return -1
-        return fp+len(token) + tt
+        return -1 if tt == -1 else fp+len(token) + tt
     return -1
 
 
@@ -198,7 +190,6 @@ def replace_token(token, replace, source):
             break
         else:
             source = source[:pos] + replace + source[pos + len(token):]
-            pass
     return source
 
 
@@ -235,19 +226,15 @@ def find_string_literals(source):
 # removes string literals and inserts a place holder, returning the ist of string literals and the conditioned source
 def placeholder_string_literals(source):
     strings = find_string_literals(source)
-    index = 0
-    for s in strings:
-        source = source.replace(s, '"<placeholder_string_literal_{}>"'.format(index))
-        index += 1
+    for index, s in enumerate(strings):
+        source = source.replace(s, f'"<placeholder_string_literal_{index}>"')
     return strings, source
 
 
 # replace placeholder literals with the strings
 def replace_placeholder_string_literals(strings, source):
-    index = 0
-    for s in strings:
-        source = source.replace('"<placeholder_string_literal_{}>"'.format(index), s)
-        index += 1
+    for index, s in enumerate(strings):
+        source = source.replace(f'"<placeholder_string_literal_{index}>"', s)
     return source
 
 
@@ -257,10 +244,7 @@ def get_enum_members(declaration):
     end = enclose("{", "}", declaration, 0)-1
     body = declaration[start:end]
     members = body.split(",")
-    conditioned = []
-    for member in members:
-        if len(member.strip()) > 0:
-            conditioned.append(member.strip())
+    conditioned = [member.strip() for member in members if len(member.strip()) > 0]
     enum_value = 0
     enum_members = []
     for member in conditioned:
@@ -314,9 +298,7 @@ def get_members(type_specifier, declaration):
         "enum": get_enum_members,
         "struct": get_struct_members
     }
-    if type_specifier in lookup:
-        return lookup[type_specifier](declaration)
-    return []
+    return lookup[type_specifier](declaration) if type_specifier in lookup else []
 
 
 # finds the fully qualified scope for a type declaration
@@ -330,26 +312,25 @@ def get_type_declaration_scope(source, type_pos):
     scopes = []
     while True:
         scope_start, i = find_first(source, scope_identifier, pos)
-        if scope_start != -1:
-            scp = source.find(";", scope_start)
-            pp = source.find("{", scope_start)
-            if us(pp) > scp:
-                if scp == -1:
-                    return scopes
-                pos = scp
-                continue
-            scope_end = enclose("{", "}", source, scope_start)
-            if scope_end > type_pos > scope_start:
-                scope_name = type_name(source[scope_start:scope_end])
-                scopes.append({
-                    "type": i,
-                    "name": scope_name
-                })
-                pos = source.find("{", scope_start) + 1
-            else:
-                pos = scope_end
-        else:
+        if scope_start == -1:
             return scopes
+        scp = source.find(";", scope_start)
+        pp = source.find("{", scope_start)
+        if us(pp) > scp:
+            if scp == -1:
+                return scopes
+            pos = scp
+            continue
+        scope_end = enclose("{", "}", source, scope_start)
+        if scope_end > type_pos > scope_start:
+            scope_name = type_name(source[scope_start:scope_end])
+            scopes.append({
+                "type": i,
+                "name": scope_name
+            })
+            pos = source.find("{", scope_start) + 1
+        else:
+            pos = scope_end
         if pos > type_pos:
             return scopes
     return []
@@ -398,59 +379,55 @@ def find_type_declarations(type_specifier, source):
     pos = 0
     while True:
         start_pos = find_token(type_specifier, source[pos:])
-        if start_pos != -1:
-            start_pos += pos
-            # handle forward decl
-            fp, tok = find_first(source, ["{", ";"], start_pos)
-            forward = False
-            members = []
-            if tok == ";":
-                declaration = source[start_pos:fp]
-                forward = True
-                end_pos = fp
-            else:
-                end_pos = enclose("{", "}", source, start_pos)
-                declaration = source[start_pos:end_pos]
-                members = get_members(type_specifier, declaration)
-            scope = get_type_declaration_scope(source, start_pos)
-            name = type_name(declaration)
-            qualified_name = ""
-            for s in scope:
-                if s["type"] == "namespace":
-                    qualified_name += s["name"] + "::"
-            qualified_name += name
-            typedefs, typedef_names = find_typedefs(qualified_name, source)
-            attributes = find_type_attributes(source, start_pos)
-            results.append({
-                "type": type_specifier,
-                "name": name,
-                "qualified_name": qualified_name,
-                "declaration": declaration,
-                "members": members,
-                "scope": scope,
-                "typedefs": typedefs,
-                "typedef_names": typedef_names,
-                "attributes": attributes,
-                "forward_declaration": forward
-            })
-            pos = end_pos+1
-        else:
+        if start_pos == -1:
             break
+        start_pos += pos
+        # handle forward decl
+        fp, tok = find_first(source, ["{", ";"], start_pos)
+        forward = False
+        members = []
+        if tok == ";":
+            declaration = source[start_pos:fp]
+            forward = True
+            end_pos = fp
+        else:
+            end_pos = enclose("{", "}", source, start_pos)
+            declaration = source[start_pos:end_pos]
+            members = get_members(type_specifier, declaration)
+        scope = get_type_declaration_scope(source, start_pos)
+        name = type_name(declaration)
+        qualified_name = "".join(
+            s["name"] + "::" for s in scope if s["type"] == "namespace"
+        )
+        qualified_name += name
+        typedefs, typedef_names = find_typedefs(qualified_name, source)
+        attributes = find_type_attributes(source, start_pos)
+        results.append({
+            "type": type_specifier,
+            "name": name,
+            "qualified_name": qualified_name,
+            "declaration": declaration,
+            "members": members,
+            "scope": scope,
+            "typedefs": typedefs,
+            "typedef_names": typedef_names,
+            "attributes": attributes,
+            "forward_declaration": forward
+        })
+        pos = end_pos+1
     for r in results:
-        names.append(r["name"])
-        names.append(r["qualified_name"])
-        for name in r["typedef_names"]:
-            names.append(name)
+        names.extend((r["name"], r["qualified_name"]))
+        names.extend(iter(r["typedef_names"]))
     return results, names
 
 
 # find include statements
 def find_include_statements(source):
-    includes = []
-    for line in source.splitlines():
-        if line.strip().startswith("#include"):
-            includes.append(line)
-    return includes
+    return [
+        line
+        for line in source.splitlines()
+        if line.strip().startswith("#include")
+    ]
 
 
 # finds the next token ignoring white space
@@ -629,7 +606,7 @@ def get_funtion_prototype(func):
             args += ", "
     if num_args == 0:
         args = "void"
-    return "(" + args + ")"
+    return f"({args})"
 
 
 # main function for scope
@@ -671,8 +648,8 @@ def test():
     print("--------------------------------------------------------------------------------")
     token = "SOME_TOKEN"
     token_pos = find_token(token, source)
-    print("token pos: {}".format(token_pos))
-    print("token:" + source[token_pos:token_pos+len(token)])
+    print(f"token pos: {token_pos}")
+    print(f"token:{source[token_pos:token_pos + len(token)]}")
 
     print("--------------------------------------------------------------------------------")
     print("find all tokens ----------------------------------------------------------------")
@@ -680,7 +657,7 @@ def test():
     token = "int"
     token_locations = find_all_tokens(token, source)
     for loc in token_locations:
-        print("{}: ".format(loc) + source[loc:loc+10] + "...")
+        print(f"{loc}: {source[loc:loc + 10]}...")
 
     # find structs
     print("--------------------------------------------------------------------------------")

@@ -35,46 +35,43 @@ class pmm_file:
         self.joints = []
 
     def write(self, filename):
-        print("writing: " + filename)
-        output = open(filename, 'wb+')
+        print(f"writing: {filename}")
+        with open(filename, 'wb+') as output:
+            num_geom = len(self.geometry)
+            num_material = len(self.materials)
+            num_scene = len(self.scene)
+            num_joints = len(self.joints)
 
-        num_geom = len(self.geometry)
-        num_material = len(self.materials)
-        num_scene = len(self.scene)
-        num_joints = len(self.joints)
+            output.write(struct.pack("i", num_scene))
+            output.write(struct.pack("i", num_material))
+            output.write(struct.pack("i", num_geom))
 
-        output.write(struct.pack("i", num_scene))
-        output.write(struct.pack("i", num_material))
-        output.write(struct.pack("i", num_geom))
+            offset = 0
+            for s in self.scene:
+                output.write(struct.pack("i", offset))
+                offset += len(s) * 4
 
-        offset = 0
-        for s in self.scene:
-            output.write(struct.pack("i", offset))
-            offset += len(s) * 4
+            for i in range(0, len(self.material_names)):
+                write_parsable_string(output, self.material_names[i])
+                output.write(struct.pack("i", offset))
+                offset += len(self.materials[i]) * 4
 
-        for i in range(0, len(self.material_names)):
-            write_parsable_string(output, self.material_names[i])
-            output.write(struct.pack("i", offset))
-            offset += len(self.materials[i]) * 4
+            for i in range(0, len(self.geometry_names)):
+                write_parsable_string(output, self.geometry_names[i])
+                output.write(struct.pack("i", offset))
+                offset += self.geometry_sizes[i]
 
-        for i in range(0, len(self.geometry_names)):
-            write_parsable_string(output, self.geometry_names[i])
-            output.write(struct.pack("i", offset))
-            offset += self.geometry_sizes[i]
+            for s in self.scene:
+                for b in s:
+                    output.write(b)
 
-        for s in self.scene:
-            for b in s:
-                output.write(b)
+            for m in self.materials:
+                for b in m:
+                    output.write(b)
 
-        for m in self.materials:
-            for b in m:
-                output.write(b)
-
-        for g in self.geometry:
-            for b in g:
-                output.write(b)
-
-        output.close()
+            for g in self.geometry:
+                for b in g:
+                    output.write(b)
 
 
 output_file = pmm_file()
@@ -90,16 +87,16 @@ def write_parsable_string(output, str):
     str = str.lower()
     output.write(struct.pack("i", (len(str))))
     for c in str:
-        ascii = int(ord(c))
-        output.write(struct.pack("i", (int(ascii))))
+        ascii = ord(c)
+        output.write(struct.pack("i", ascii))
 
 
 def pack_parsable_string(output, str):
     str = str.lower()
     output.append(struct.pack("i", (len(str))))
     for c in str:
-        ascii = int(ord(c))
-        output.append(struct.pack("i", (int(ascii))))
+        ascii = ord(c)
+        output.append(struct.pack("i", ascii))
 
 
 def write_split_floats(output, str):
@@ -175,35 +172,30 @@ def pack_corrected_4x4matrix(output, matrix_array):
 
 
 def correct_4x4matrix(matrix_string):
-    corrected = []
     matrix_array = matrix_string.split()
     if author == "Maxypad":
         num_mats = len(matrix_array) / 16
+        corrected = []
         for m in range(0, int(num_mats), 1):
             index = m * 16
-            # x row
-            corrected.append(float(matrix_array[index+0]))
-            corrected.append(float(matrix_array[index+1]))
-            corrected.append(float(matrix_array[index+2]))
-            corrected.append(float(matrix_array[index+3]))
-            # y row
-            corrected.append(float(matrix_array[index+8]))
-            corrected.append(float(matrix_array[index+9]))
-            corrected.append(float(matrix_array[index+10]))
-            corrected.append(float(matrix_array[index+11]))
-            # z row
-            corrected.append(float(matrix_array[index+4]) * -1.0)
-            corrected.append(float(matrix_array[index+5]) * -1.0)
-            corrected.append(float(matrix_array[index+6]) * -1.0)
-            corrected.append(float(matrix_array[index+7]) * -1.0)
-            # w row
-            corrected.append(float(matrix_array[index+12]))
-            corrected.append(float(matrix_array[index+13]))
-            corrected.append(float(matrix_array[index+14]))
-            corrected.append(float(matrix_array[index+15]))
-
-    out_str = ""
-    for m in matrix_array:
-        out_str += m + " "
-
-    return out_str
+            corrected.extend(
+                (
+                    float(matrix_array[index + 0]),
+                    float(matrix_array[index + 1]),
+                    float(matrix_array[index + 2]),
+                    float(matrix_array[index + 3]),
+                    float(matrix_array[index + 8]),
+                    float(matrix_array[index + 9]),
+                    float(matrix_array[index + 10]),
+                    float(matrix_array[index + 11]),
+                    float(matrix_array[index + 4]) * -1.0,
+                    float(matrix_array[index + 5]) * -1.0,
+                    float(matrix_array[index + 6]) * -1.0,
+                    float(matrix_array[index + 7]) * -1.0,
+                    float(matrix_array[index + 12]),
+                    float(matrix_array[index + 13]),
+                    float(matrix_array[index + 14]),
+                    float(matrix_array[index + 15]),
+                )
+            )
+    return "".join(f"{m} " for m in matrix_array)

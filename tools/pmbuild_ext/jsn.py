@@ -53,17 +53,12 @@ def display_help():
 
 # do c like (u32)-1
 def us(v):
-    if v == -1:
-        return sys.maxsize
-    return v
+    return sys.maxsize if v == -1 else v
 
 
 # return string inside "quotes" to make code gen cleaner
 def in_quotes(string):
-    if len(string) >= 2:
-        if string[0] == "\"":
-            return string
-    return '"' + string + '"'
+    return string if len(string) >= 2 and string[0] == "\"" else f'"{string}"'
 
 
 # create a new dir for a file or a folder if it doesnt already exist and not throw an exception
@@ -83,9 +78,7 @@ def change_ext(file, ext):
 
 # is_file
 def is_file(file):
-    if len(os.path.splitext(file)[1]) > 0:
-        return True
-    return False
+    return len(os.path.splitext(file)[1]) > 0
 
 
 # python json style dumps
@@ -104,14 +97,14 @@ def format(jsn, indent=4):
         if char in el:
             fmt += "\n"
             cur_indent -= 4
-            for i in range(0, cur_indent):
+            for _ in range(0, cur_indent):
                 fmt += " "
         fmt += char
         if char in nl:
             fmt += "\n"
             if char in id:
                 cur_indent += 4
-            for i in range(0, cur_indent):
+            for _ in range(0, cur_indent):
                 fmt += " "
         if char == ":":
             fmt += " "
@@ -144,20 +137,14 @@ def find_strings(jsn):
             elif oq == c and prev_char != "\\":
                 oq = ""
                 str_list.append((istart, ic))
-        if prev_char == "\\" and c == "\\":
-            prev_char = ""
-        else:
-            prev_char = c
+        prev_char = "" if prev_char == "\\" and c == "\\" else c
     return str_list
 
 
 # trims whitespace from lines
 def trim_whitespace(jsn):
     lines = jsn.split('\n')
-    trimmed = ""
-    for l in lines:
-        trimmed += l.strip() + "\n"
-    return trimmed
+    return "".join(l.strip() + "\n" for l in lines)
 
 
 # remove whitespace and newlines to simplify subsequent ops
@@ -167,10 +154,7 @@ def clean_src(jsn):
     for char in jsn:
         if char == '\"':
             inside_quotes = not inside_quotes
-        if not inside_quotes:
-            strip_char = char.strip()
-        else:
-            strip_char = char
+        strip_char = char.strip() if not inside_quotes else char
         clean += strip_char
     return clean
 
@@ -184,11 +168,10 @@ def remove_comments(file_data):
         str_list = find_strings(line)
         if inside_block:
             ecpos = line.find("*/")
-            if ecpos != -1:
-                inside_block = False
-                line = line[ecpos+2:]
-            else:
+            if ecpos == -1:
                 continue
+            inside_block = False
+            line = line[ecpos+2:]
         cpos = line.find("//")
         mcpos = line.find("/*")
 
@@ -217,14 +200,13 @@ def change_quotes(jsn):
         if c > 0:
             prev = jsn[c-1]
         char = jsn[c]
-        if char == "\"":
-            if is_inside_quotes(str_list, c):
-                if prev != "\\":
-                    conditioned += "\\\""
-                    continue
         if char == "'":
             if not is_inside_quotes(str_list, c):
                 conditioned += "\""
+                continue
+        elif char == "\"":
+            if is_inside_quotes(str_list, c) and prev != "\\":
+                conditioned += "\\\""
                 continue
         conditioned += char
     return conditioned
@@ -240,10 +222,14 @@ def collapse_line_breaks(jsn):
         if skip:
             skip = False
             continue
-        if char == "\\" and c+1 < len(jsn) and jsn[c+1] == "\n":
-            if is_inside_quotes(str_list, c):
-                skip = True
-                continue
+        if (
+            char == "\\"
+            and c + 1 < len(jsn)
+            and jsn[c + 1] == "\n"
+            and is_inside_quotes(str_list, c)
+        ):
+            skip = True
+            continue
         conditioned += char
     return conditioned
 
@@ -266,7 +252,7 @@ def get_value_type(value):
             return "object"
         if value[0] == "[":
             return "array"
-        if value == 'true' or value == 'false':
+        if value in ['true', 'false']:
             return "bool"
         if value.find(".") != -1:
             try:
@@ -315,7 +301,7 @@ def enclose_brackets(open, close, string, pos):
     pos = string.find(open, pos)
     stack = [open]
     pos += 1
-    while len(stack) > 0 and pos < len(string):
+    while stack and pos < len(string):
         if string[pos] == open:
             stack.append(open)
         if string[pos] == close:
@@ -355,9 +341,9 @@ def quote_value(value, pos, next):
     elif get_value_type(value) == "float":
         f = value
         if f[0] == ".":
-            f = "0" + f
+            f = f"0{f}"
         elif f[len(f)-1] == ".":
-            f = f + "0"
+            f = f"{f}0"
         quoted = f
         pos = next
     elif get_value_type(value) == "int":
@@ -372,7 +358,7 @@ def quote_value(value, pos, next):
 # add quotes to array items
 def quote_array(jsn):
     if not jsn:
-        return "[" + jsn + "]"
+        return f"[{jsn}]"
     # arrays can contain mixed data so go element wise
     pos = 0
     element_wise = ""
@@ -402,7 +388,7 @@ def quote_array(jsn):
         if pos >= len(jsn):
             break
         element_wise += ","
-    return "[" + element_wise + "]"
+    return f"[{element_wise}]"
 
 
 # add quotes to unquoted keys, strings and strings in arrays
@@ -417,9 +403,7 @@ def quote_object(jsn):
         if pos == -1:
             quoted += jsn[cur:]
             break
-        # ignore : inside quotes
-        iq = is_inside_quotes(str_list, pos)
-        if iq:
+        if iq := is_inside_quotes(str_list, pos):
             quoted += jsn[cur:iq]
             pos = iq
             continue
@@ -453,12 +437,10 @@ def quote_object(jsn):
             key, inherit_list = get_inherits(key)
             if len(inherit_list) > 0:
                 inherit += in_quotes("jsn_inherit") + ": ["
-                p = 0
-                for i in inherit_list:
+                for p, i in enumerate(inherit_list):
                     if p > 0:
                         inherit += ", "
                     inherit += in_quotes(i.strip())
-                    p += 1
                 inherit += "],"
         qkey = in_quotes(key)
         quoted += jsn[cur:delim+1]
@@ -483,12 +465,11 @@ def remove_trailing_commas(jsn):
     for i in range(0, len(jsn)):
         j = i + 1
         char = jsn[i]
-        if char == "," and j < len(jsn):
-            if jsn[j] in trail:
-                continue
+        if char == "," and j < len(jsn) and jsn[j] in trail:
+            continue
         clean += char
     if clean[len(clean)-1] == ",":
-        clean = clean[:len(clean)-1]
+        clean = clean[:-1]
     return clean
 
 
@@ -510,11 +491,10 @@ def inherit_dict(dest, second):
     for k, v in second.items():
         if type(v) == dict:
             if k not in dest or type(dest[k]) != dict:
-                dest[k] = dict()
+                dest[k] = {}
             inherit_dict(dest[k], v)
-        else:
-            if k not in dest:
-                dest[k] = v
+        elif k not in dest:
+            dest[k] = v
 
 
 # recursively merge dicts member wise
@@ -522,8 +502,7 @@ def inherit_dict_recursive(d, d2):
     inherits = []
     for k, v in d.items():
         if k == "jsn_inherit":
-            for i in v:
-                inherits.append(i)
+            inherits.extend(iter(v))
     if "jsn_inherit" in d.keys():
         d.pop("jsn_inherit", None)
         for i in inherits:
@@ -547,7 +526,9 @@ def get_imports(jsn, import_dirs):
         return jsn[bp:], imports
     if not import_dirs:
         filedir = os.getcwd()
-        print("WARNING: jsn loads() import file paths will be relative to cwd " + filedir)
+        print(
+            f"WARNING: jsn loads() import file paths will be relative to cwd {filedir}"
+        )
         print("\t use load_from_file() for import paths relative to the jsn file.")
     for i in head:
         if i.find("import") != -1:
@@ -560,7 +541,7 @@ def get_imports(jsn, import_dirs):
                     found = True
                     break
             if not found:
-                print("ERROR: cannot find import file " + stripped)
+                print(f"ERROR: cannot find import file {stripped}")
     return jsn[bp:], imports
 
 
@@ -583,15 +564,13 @@ def vars_in_string(string):
 def resolve_vars(value, vars):
     value_string = str(value)
     vv = vars_in_string(value_string)
-    count = 0
-    for v in vv:
-        var_name = v[2:len(v)-1]
+    for count, v in enumerate(vv):
+        var_name = v[2:-1]
         if var_name in vars.keys():
             if type(value) == list:
-                nl = list()
+                nl = []
                 for i in value:
-                    ri = resolve_vars(i, vars)
-                    if ri:
+                    if ri := resolve_vars(i, vars):
                         nl.append(resolve_vars(i, vars))
                     else:
                         nl.append(i)
@@ -607,9 +586,8 @@ def resolve_vars(value, vars):
             print(platform.system())
             print(json.dumps(vars, indent=4))
             print(value)
-            print("error: undefined variable '" + var_name + "'")
+            print(f"error: undefined variable '{var_name}'")
             exit(1)
-        count += 1
     return None
 
 
@@ -626,16 +604,13 @@ def resolve_vars_recursive(d, vars):
         elif type(value) == list:
             resolved_list = []
             for i in value:
-                ri = resolve_vars(i, stack_vars)
-                if ri:
+                if ri := resolve_vars(i, stack_vars):
                     resolved_list.append(ri)
                 else:
                     resolved_list.append(i)
             d[k] = resolved_list
-        else:
-            var = resolve_vars(d[k], stack_vars)
-            if var:
-                d[k] = var
+        elif var := resolve_vars(d[k], stack_vars):
+            d[k] = var
     if "jsn_vars" in d.keys():
         d.pop("jsn_vars", None)
 
@@ -643,19 +618,19 @@ def resolve_vars_recursive(d, vars):
 # resolve platform specific keys, merging
 def resolve_platform_keys_recursive(d, platform_name):
     rm_keys = []
-    platform_dict = dict()
+    platform_dict = {}
     for k in d.keys():
         bp = k.find("<")
         ep = k.find(">")
         if bp != -1 and ep != -1:
             key_platform = k[bp+1:ep]
-            key_base = k[:bp]
             if key_platform == platform_name:
+                key_base = k[:bp]
                 platform_dict[key_base] = d[k]
             rm_keys.append(k)
         value = d[k]
         if type(value) == dict:
-            resolve_platform_keys_recursive(d[k], platform_name)
+            resolve_platform_keys_recursive(value, platform_name)
     for k in rm_keys:
         d.pop(k)
     inherit_dict(d, platform_dict)
@@ -672,7 +647,7 @@ def resolve_platform_keys(d):
     if platform.system() in name_lookup:
         platform_name = name_lookup[platform.system()]
     else:
-        print("warning: unknown platform system " + platform.system())
+        print(f"warning: unknown platform system {platform.system()}")
     resolve_platform_keys_recursive(d, platform_name)
 
 
@@ -703,7 +678,7 @@ def loads(jsn, import_dirs=None):
     except:
         jsn_lines = jsn.split("\n")
         for l in range(0, len(jsn_lines)):
-            print(str(l+1) + " " + jsn_lines[l])
+            print(f"{str(l + 1)} {jsn_lines[l]}")
         traceback.print_exc()
         exit(1)
 
@@ -719,7 +694,7 @@ def loads(jsn, import_dirs=None):
     inherit_dict_recursive(j, j)
 
     # resolve vars
-    resolve_vars_recursive(j, dict())
+    resolve_vars_recursive(j, {})
 
     return j
 
@@ -733,21 +708,17 @@ def get_import_file_list(filepath, import_dirs=None):
         for ri in recursive_imports:
             if ri not in imports:
                 imports.append(ri)
-    abs_imports = []
-    for i in imports:
-        abs_imports.append(os.path.normpath(os.path.join(os.getcwd(), i)))
-    return abs_imports
+    return [os.path.normpath(os.path.join(os.getcwd(), i)) for i in imports]
 
 
 # convert jsn to json and write to a file
 def convert_jsn(info, input_file, output_file):
-    print("converting: " + input_file + " to " + output_file)
-    output_file = open(output_file, "w+")
-    jdict = load_from_file(input_file, info.import_dirs)
-    if info.print_out:
-        print(json.dumps(jdict, indent=4))
-    output_file.write(json.dumps(jdict, indent=4))
-    output_file.close()
+    print(f"converting: {input_file} to {output_file}")
+    with open(output_file, "w+") as output_file:
+        jdict = load_from_file(input_file, info.import_dirs)
+        if info.print_out:
+            print(json.dumps(jdict, indent=4))
+        output_file.write(json.dumps(jdict, indent=4))
 
 
 def main():

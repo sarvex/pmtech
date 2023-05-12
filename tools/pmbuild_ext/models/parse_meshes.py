@@ -84,17 +84,13 @@ class geometry_mesh:
     vertex_elements = []
 
     def get_element_stream(self, sem_id):
-        index = 0
-        for s in self.semantic_ids:
+        for index, s in enumerate(self.semantic_ids):
             if s == sem_id:
                 return self.vertex_elements[index]
-            index += 1
-        index = 0
-        for s in self.alt_ids:
+        for index, s in enumerate(self.alt_ids):
             if s == sem_id:
                 return self.vertex_elements[index]
-            index += 1
-        print("Error: unsupported vertex semantic " + sem_id)
+        print(f"Error: unsupported vertex semantic {sem_id}")
 
     def __init__(self):
         self.sources = []
@@ -107,11 +103,9 @@ class geometry_mesh:
         self.min_extents = []
         self.vertex_elements = []
 
-        index = 0
-        for s in self.semantic_ids:
+        for index, s in enumerate(self.semantic_ids):
             self.vertex_elements.append(vertex_stream())
             self.vertex_elements[index].semantic_id = s
-            index += 1
 
 
 class geometry_container:
@@ -123,7 +117,7 @@ class geometry_container:
 
 def add_vertex_input(input_node, vertex_input_instance):
     set = input_node.get("set")
-    if set == None:
+    if set is None:
         set = ""
     vertex_input_instance.semantic_ids.append(input_node.get("semantic") + set)
     src_str = input_node.get("source")
@@ -184,8 +178,8 @@ def write_source_float_channel(p, src, sem_id, mesh):
 
 def generate_index_buffer(mesh):
     mesh.index_buffer = []
-    vert_count = int(len(mesh.vertex_elements[0].float_values) / 4)
-    for i in range(0, int(vert_count), 3):
+    vert_count = len(mesh.vertex_elements[0].float_values) // 4
+    for i in range(0, vert_count, 3):
         mesh.index_buffer.append(i + 2)
         mesh.index_buffer.append(i + 1)
         mesh.index_buffer.append(i + 0)
@@ -196,25 +190,22 @@ def parse_mesh(node, tris, controller):
     mesh_instance.controller = controller
 
     # find geometry sources
-    for src in node.iter(schema + 'source'):
+    for src in node.iter(f'{schema}source'):
         geom_src = geometry_source()
         geom_src.float_values = []
         geom_src.id = src.get("id")
-        for accessor in src.iter(schema + 'accessor'):
+        for accessor in src.iter(f'{schema}accessor'):
             geom_src.stride = accessor.get("stride")
-        for data in src.iter(schema + 'float_array'):
+        for data in src.iter(f'{schema}float_array'):
             splitted = data.text.split()
-            for vf in splitted:
-                geom_src.float_values.append(vf)
+            geom_src.float_values.extend(iter(splitted))
         mesh_instance.sources.append(geom_src)
 
-    stream = dict()
-    stream["buffer"] = list()
-
+    stream = {"buffer": []}
     # find vertex struct
-    for v in node.iter(schema + 'vertices'):
-        stream[v.get("id")] = list()
-        for i in v.iter(schema + 'input'):
+    for v in node.iter(f'{schema}vertices'):
+        stream[v.get("id")] = []
+        for i in v.iter(f'{schema}input'):
             vertex_instance = vertex_input()
             vertex_instance.id = v.get("id")
             add_vertex_input(i, vertex_instance)
@@ -226,7 +217,7 @@ def parse_mesh(node, tris, controller):
 
     # find triangles (multi stream index buffers)
     mesh_instance.triangle_count = tris.get("count")
-    for i in tris.iter(schema + 'input'):
+    for i in tris.iter(f'{schema}input'):
         vertex_instance = vertex_input()
         vertex_instance.id = i.get("id")
         add_vertex_input(i, vertex_instance)
@@ -239,15 +230,15 @@ def parse_mesh(node, tris, controller):
         })
 
     # find indices
-    for indices in tris.iter(schema + 'p'):
+    for indices in tris.iter(f'{schema}p'):
         splitted = indices.text.split()
         for vi in splitted:
             mesh_instance.triangle_indices.append(vi)
 
     # extract semantics mapped to data streams
-    unpack_streams = dict()
+    unpack_streams = {}
     for s in stream["buffer"]:
-        if s["src"] in stream.keys():
+        if s["src"] in stream:
             for vs in stream[s["src"]]:
                 vs["offset"] = s["offset"]
                 unpack_streams[vs["semantic"]] = vs
@@ -255,21 +246,18 @@ def parse_mesh(node, tris, controller):
             unpack_streams[s["semantic"]] = s
 
     # find data streams
-    _data = dict()
+    _data = {}
     for s in unpack_streams:
         stream = unpack_streams[s]
-        for source in node.iter(schema + 'source'):
+        for source in node.iter(f'{schema}source'):
             if source.get("id").find(stream["src"]) != -1:
-                for data in source.iter(schema + 'float_array'):
+                for data in source.iter(f'{schema}float_array'):
                     stream["data_count"] = data.get("count")
                     _data[s] = data.text.split(" ")
-                    for accessor in source.iter(schema + 'accessor'):
+                    for accessor in source.iter(f'{schema}accessor'):
                         stream["stride"] = accessor.get("stride")
 
-    buffer_dict = dict()
-    buffer_dict["data"] = _data
-    buffer_dict["streams"] = unpack_streams
-
+    buffer_dict = {"data": _data, "streams": unpack_streams}
     # roll the multi stream vertex buffer into 1
     generate_vertex_buffer(mesh_instance, buffer_dict)
 
@@ -311,14 +299,8 @@ def swizzle_vertex(semantic, v):
         "TEXTANGENT",
         "TEXBINORMAL"
     ]
-    if semantic in swizzle:
-        if helpers.author == "Max":
-            vv = [
-                float(v[0]),
-                float(v[2]),
-                float(v[1]) * -1.0
-            ]
-            return vv
+    if semantic in swizzle and helpers.author == "Max":
+        return [float(v[0]), float(v[2]), float(v[1]) * -1.0]
     return v
 
 
@@ -348,15 +330,15 @@ def generate_vertex_buffer(mesh, buffer_dict):
             stride = 1
         elif stream_len > 0:
             print("error: mismatched vertex size")
-            print(stream.semantic_id + " is " + str(stream_len) + " should be " + str(num_floats))
+            print(f"{stream.semantic_id} is {stream_len} should be {num_floats}")
             if stream_len % num_floats == 0:
-                stride = int(stream_len / num_floats)
+                stride = stream_len // num_floats
         elem_stride.append(stride)
 
     # pad out required streams
     for i in range(0, len(mesh.semantic_ids)):
         if len(mesh.vertex_elements[i].float_values) == 0 and mesh.required_elements[i]:
-            for j in range(0, num_floats):
+            for _ in range(0, num_floats):
                 mesh.vertex_elements[i].float_values.append(0.0)
 
     for i in range(0, num_floats, 4):

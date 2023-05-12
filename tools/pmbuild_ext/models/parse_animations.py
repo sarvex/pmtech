@@ -49,11 +49,10 @@ class animation_channel:
 
 def parse_animation_source(root, source_id):
     new_sources = []
-    for src in root.iter(schema+'source'):
+    for src in root.iter(f'{schema}source'):
         if "#"+src.get("id") == source_id:
-            for a in src.iter(schema+'accessor'):
-                offset = 0
-                for p in a.iter(schema+'param'):
+            for a in src.iter(f'{schema}accessor'):
+                for offset, p in enumerate(a.iter(f'{schema}param')):
                     new_source = animation_source()
                     new_source.data = []
                     new_source.count = a.get("count")
@@ -61,22 +60,19 @@ def parse_animation_source(root, source_id):
                     new_source.semantic = p.get("name")
                     new_source.type = p.get('type')
                     new_source.offset = offset
-                    offset += 1
-                    for data_node in src.iter(schema+'float_array'):
+                    for data_node in src.iter(f'{schema}float_array'):
                         split_floats = data_node.text.split()
-                        for f in split_floats:
-                            new_source.data.append(f)
-                    for names_node in src.iter(schema+'Name_array'):
+                        new_source.data.extend(iter(split_floats))
+                    for names_node in src.iter(f'{schema}Name_array'):
                         split_names = names_node.text.split()
-                        for n in split_names:
-                            new_source.data.append(n)
+                        new_source.data.extend(iter(split_names))
                     new_sources.append(new_source)
     return new_sources
 
 
 def consolidate_channels_to_targets():
     global animation_channels
-    packed_targets = dict()
+    packed_targets = {}
     packed_targets.clear()
     for channel in animation_channels:
         info = channel.target_bone.split('/')
@@ -86,7 +82,7 @@ def consolidate_channels_to_targets():
             packed_targets[bone_target] = []
         target_source = {"anim_target": anim_target, "channel": channel}
         packed_targets[bone_target].append(target_source)
-    for target in packed_targets.keys():
+    for target in packed_targets:
         max_keys = 0
         all_keys = []
         time = []
@@ -106,11 +102,12 @@ def consolidate_channels_to_targets():
             interp = []
             data = []
             for src in channel_target["channel"].sampler.sources:
-                if src.semantic == "TIME":
-                    num_keys = len(src.data)
-                    channel_time = src.data
                 if src.semantic == "INTERPOLATION":
                     interp = src.data
+                elif src.semantic == "TIME":
+                    num_keys = len(src.data)
+                    channel_time = src.data
+                    data = src.data
                 else:
                     data = src.data
             if num_keys == max_keys:
@@ -128,23 +125,22 @@ def consolidate_channels_to_targets():
 def parse_animations(root, anims_out, joints_in):
     global animation_channels
     animation_channels = []
-    for animation in root.iter(schema+'animation'):
+    for animation in root.iter(f'{schema}animation'):
         if animation.get("id").find(".matrix") == -1:
             continue
         samplers = []
-        for sampler in animation.iter(schema+'sampler'):
+        for sampler in animation.iter(f'{schema}sampler'):
             a_sampler = animation_sampler()
             a_sampler.id = sampler.get("id")
             a_sampler.sources = []
-            for input in sampler.iter(schema+'input'):
+            for input in sampler.iter(f'{schema}input'):
                 sampler_sources = parse_animation_source(root, input.get("source"))
-                for src in sampler_sources:
-                    a_sampler.sources.append(src)
+                a_sampler.sources.extend(iter(sampler_sources))
             samplers.append(a_sampler)
-        for channel in animation.iter(schema+'channel'):
+        for channel in animation.iter(f'{schema}channel'):
             a_channel = animation_channel()
             for s in samplers:
-                if channel.get("source") == "#"+s.id:
+                if channel.get("source") == f"#{s.id}":
                     a_channel.target_bone = channel.get("target")
                     a_channel.sampler = s
                     animation_channels.append(a_channel)
@@ -155,7 +151,7 @@ def write_animation_file(filename):
     global animation_channels
     num_channels = len(animation_channels)
     if num_channels > 0:
-        print("writing: " + filename)
+        print(f"writing: {filename}")
         output = open(filename, 'wb+')
         output.write(struct.pack("i", helpers.anim_version_number))
         output.write(struct.pack("i", num_channels))

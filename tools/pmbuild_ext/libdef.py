@@ -27,29 +27,22 @@ def dumpbin_get_symbols(lib):
     for dir in dirs:
         dumps.extend(glob.glob(os.path.join(dir, "**/dumpbin.exe"), recursive=True))
     dumps = sorted(dumps)
-    
-    dumpbin_exe = ""
-    for d in dumps:
-        if os.path.isfile(d):
-            dumpbin_exe = d
-            break
 
+    dumpbin_exe = next((d for d in dumps if os.path.isfile(d)), "")
     if not os.path.isfile(dumpbin_exe):
         print("error: dumpbin utility not found")
         print("error: pmtech/tools/pmbuild_ext/libdef.py is looking for dumpbin.exe in:")
         for d in dirs:
-            print("error: {}".format(d))
+            print(f"error: {d}")
         exit(2)
-    
+
     process = subprocess.Popen([dumpbin_exe,'/symbols',lib], bufsize=1,
                                stdout=subprocess.PIPE, stdin=subprocess.PIPE,
                                universal_newlines=True)
     process.stdin.close()
     for line in process.stdout:
-        # Look for external symbols that are defined in some section
-        match = re.match("^.+SECT.+External\s+\|\s+(\S+).*$", line)
-        if match:
-            yield match.group(1)
+        if match := re.match("^.+SECT.+External\s+\|\s+(\S+).*$", line):
+            yield match[1]
     process.wait()
 
 # MSVC mangles names to ?<identifier_mangling>@<type_mangling>. By examining the
@@ -61,8 +54,8 @@ def dumpbin_get_symbols(lib):
 def should_keep_microsoft_symbol(symbol):
     # Variables with 'g_' prefix (globals)
     if re.search('g_', symbol):
-        return symbol + " DATA"
-        
+        return f"{symbol} DATA"
+
     namespaces = [
         "pen",
         "put",
@@ -70,33 +63,24 @@ def should_keep_microsoft_symbol(symbol):
         "ImGui",
         "physics"
     ]
-    
-    # We are intrested only in our functionality, not standard libraries
-    valid = False
-    for n in namespaces:
-        if re.search(n, symbol):
-            valid = True
-            break
-    
+
+    valid = any(re.search(n, symbol) for n in namespaces)
     if not valid:
         return None
 
     # mangleVariableEncoding => public static or global member
-    if re.search('@@[23]', symbol):
-        return symbol + " DATA"
-
-    return symbol
+    return f"{symbol} DATA" if re.search('@@[23]', symbol) else symbol
 
 def extract_symbols(lib):
-    symbols = dict()
+    symbols = {}
     for symbol1 in dumpbin_get_symbols(lib):
         symbol = should_keep_microsoft_symbol(symbol1)
-        
+
         if symbol:
-            print("accepting symbol: " + symbol)
+            print(f"accepting symbol: {symbol}")
         #else:
         #    print("rejecting symbol: " + symbol1)
-        
+
         if symbol:
             symbols[symbol] = 1 + symbols.setdefault(symbol,0)
     return symbols
@@ -111,28 +95,28 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Get the list of libraries to extract symbols from
-    libs = list()
+    libs = []
     for lib in args.libs:
         # When invoked by cmake the arguments are the cmake target names of the
         # libraries, so we need to add .lib/.a to the end and maybe lib to the
         # start to get the filename. Also allow objects.
         suffixes = ['.lib','.a','.obj','.o']
-        if not any([lib.endswith(s) for s in suffixes]):
+        if not any(lib.endswith(s) for s in suffixes):
             for s in suffixes:
                 if os.path.exists(lib+s):
                     lib = lib+s
                     break
-                if os.path.exists('lib'+lib+s):
-                    lib = 'lib'+lib+s
+                if os.path.exists(f'lib{lib}{s}'):
+                    lib = f'lib{lib}{s}'
                     break
-        if not any([lib.endswith(s) for s in suffixes]):
-            print("Don't know what to do with argument "+lib, file=sys.stderr)
+        if not any(lib.endswith(s) for s in suffixes):
+            print(f"Don't know what to do with argument {lib}", file=sys.stderr)
             exit(3)
         libs.append(lib)
 
 
     # Merge everything into a single dict
-    symbols = dict()
+    symbols = {}
 
     for lib in libs:
         lib_symbols = extract_symbols(lib)
@@ -140,11 +124,7 @@ if __name__ == '__main__':
         for k,v in list(lib_symbols.items()):
             symbols[k] = v + symbols.setdefault(k,0)
 
-    if args.o:
-        outfile = open(args.o,'w')
-    else:
-        outfile = sys.stdout
-
+    outfile = open(args.o,'w') if args.o else sys.stdout
     print("EXPORTS", file=outfile)
 
     for k,v in list(symbols.items()):

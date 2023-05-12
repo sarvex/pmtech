@@ -1,9 +1,10 @@
 import os
 import json
 
-default_settings = dict()
-default_settings["textures_dir"] = "assets/textures/"
-default_settings["models_dir"] = "assets/mesh/"
+default_settings = {
+    "textures_dir": "assets/textures/",
+    "models_dir": "assets/mesh/",
+}
 
 
 def delete_orphaned_files(build_dir, platform_data_dir):
@@ -11,9 +12,8 @@ def delete_orphaned_files(build_dir, platform_data_dir):
         for file in files:
             dest_file = os.path.join(root, file)
             if dest_file.find("dependencies.json") != -1:
-                depends_file = open(dest_file, "r")
-                depends_json = json.loads(depends_file.read())
-                depends_file.close()
+                with open(dest_file, "r") as depends_file:
+                    depends_json = json.loads(depends_file.read())
                 for file_dependencies in depends_json["files"]:
                     for key in file_dependencies.keys():
                         for dependency_info in file_dependencies[key]:
@@ -21,16 +21,15 @@ def delete_orphaned_files(build_dir, platform_data_dir):
                                 del_path = os.path.join(platform_data_dir, key)
                                 if os.path.exists(del_path):
                                     os.remove(os.path.join(platform_data_dir, key))
-                                    print("deleting " + key + " source file no longer exists")
+                                    print(f"deleting {key} source file no longer exists")
                                     print(del_path)
                                     break
 
 
 def get_build_config_setting(dir_name):
     if os.path.exists("build_config.json"):
-        build_config_file = open("build_config.json", "r")
-        build_config_json = json.loads(build_config_file.read())
-        build_config_file.close()
+        with open("build_config.json", "r") as build_config_file:
+            build_config_json = json.loads(build_config_file.read())
         if dir_name in build_config_json:
             return build_config_json[dir_name]
     return default_settings[dir_name]
@@ -47,7 +46,7 @@ def export_config_merge(master, second):
 
 
 def get_export_config(filename):
-    export_info = dict()
+    export_info = {}
     rpath = filename.replace(os.getcwd(), "")
     rpath = os.path.normpath(rpath)
     sub_dirs = rpath.split(os.sep)
@@ -77,9 +76,7 @@ def create_info(file):
 
 
 def create_dependency_info(inputs, outputs, cmdline=""):
-    info = dict()
-    info["cmdline"] = cmdline
-    info["files"] = dict()
+    info = {"cmdline": cmdline, "files": {}}
     for o in outputs:
         o = os.path.join(os.getcwd(), o)
         info["files"][o] = []
@@ -87,7 +84,7 @@ def create_dependency_info(inputs, outputs, cmdline=""):
             if not os.path.exists(i):
                 continue
             ii = create_info(i)
-            ii["data_file"] = o[o.find(os.sep + "data" + os.sep) + 1:]
+            ii["data_file"] = o[o.find(f"{os.sep}data{os.sep}") + 1:]
             info["files"][o].append(ii)
     return info
 
@@ -112,35 +109,33 @@ def check_up_to_date(dependencies, dest_file):
                         return False
                     if i["timestamp"] < os.path.getmtime(sanitized):
                         return False
-    if not file_exists:
-        return False
-    return True
+    return bool(file_exists)
 
 
 def check_up_to_date_single(dest_file, deps):
     dest_file = sanitize_filename(dest_file)
     dep_filename = dest_file.replace(os.path.splitext(dest_file)[1], ".dep")
     if not os.path.exists(dep_filename):
-        print(os.path.basename(dest_file) + ": deps does not exist.")
+        print(f"{os.path.basename(dest_file)}: deps does not exist.")
         return False
     dep_ts = os.path.getmtime(dest_file)
     file = open(dep_filename)
     d_str = file.read()
     d_json = json.loads(d_str)
     # check for changes to cmdline
-    if "cmdline" in deps:
-        if "cmdline" not in d_json.keys() or deps["cmdline"] != d_json["cmdline"]:
-            print(dest_file + " cmdline changed")
-            return False
+    if "cmdline" in deps and (
+        "cmdline" not in d_json.keys() or deps["cmdline"] != d_json["cmdline"]
+    ):
+        print(f"{dest_file} cmdline changed")
+        return False
     # check for new additions
     dep_files = []
     for output in d_json["files"]:
-        for i in d_json["files"][output]:
-            dep_files.append(i["name"])
+        dep_files.extend(i["name"] for i in d_json["files"][output])
     for output in deps["files"]:
         for i in deps["files"][output]:
             if i["name"] not in dep_files:
-                print(os.path.basename(dest_file) + ": has new inputs")
+                print(f"{os.path.basename(dest_file)}: has new inputs")
                 return False
     # check for timestamps on existing
     for d in d_json["files"]:
@@ -148,13 +143,13 @@ def check_up_to_date_single(dest_file, deps):
         for input_file in d_json["files"][d]:
             # output file does not exist yet
             if not os.path.exists(dest_file):
-                print(os.path.basename(dest_file) + ": does not exist.")
+                print(f"{os.path.basename(dest_file)}: does not exist.")
                 return False
             # output file is out of date
             if os.path.getmtime(input_file["name"]) > dep_ts:
-                print(os.path.basename(dest_file) + ": is out of date.")
+                print(f"{os.path.basename(dest_file)}: is out of date.")
                 return False
-    print(os.path.basename(dest_file) + " up to date")
+    print(f"{os.path.basename(dest_file)} up to date")
     return True
 
 
@@ -162,14 +157,12 @@ def write_to_file(dependencies):
     dir = dependencies["dir"]
     directory_dependencies = os.path.join(dir, "dependencies.json")
     try:
-        output_d = open(directory_dependencies, 'wb+')
-        output_d.write(bytes(json.dumps(dependencies, indent=4), 'UTF-8'))
-        output_d.close()
+        with open(directory_dependencies, 'wb+') as output_d:
+            output_d.write(bytes(json.dumps(dependencies, indent=4), 'UTF-8'))
     except:
         return
 
 
 def write_to_file_single(deps, file):
-    output_d = open(file, 'wb+')
-    output_d.write(bytes(json.dumps(deps, indent=4), 'UTF-8'))
-    output_d.close()
+    with open(file, 'wb+') as output_d:
+        output_d.write(bytes(json.dumps(deps, indent=4), 'UTF-8'))

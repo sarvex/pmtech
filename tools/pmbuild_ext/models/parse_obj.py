@@ -10,9 +10,7 @@ y = 1
 z = 2
 
 def normalise(v):
-    m = 0
-    for i in range(0, len(v)):
-        m += v[i] * v[i]
+    m = sum(v[i] * v[i] for i in range(0, len(v)))
     mag = math.sqrt(m)
     vr = []
     for i in range(0, len(v)):
@@ -24,17 +22,11 @@ def normalise(v):
 
 
 def subtract(v1, v2):
-    vr = []
-    for i in range(0, len(v1)):
-        vr.append(v1[i] - v2[i])
-    return vr
+    return [v1[i] - v2[i] for i in range(0, len(v1))]
 
 
 def multiply_scalar(v1, s):
-    vr = []
-    for i in range(0, len(v1)):
-        vr.append(v1[i] * s)
-    return vr
+    return [v1[i] * s for i in range(0, len(v1))]
 
 
 def dot(v1, v2):
@@ -72,11 +64,7 @@ def calc_tangents(vb):
         w2 = normalise(subtract(uv[2], uv[0]))
 
         c = w1[x] * w2[y] - w2[x] * w1[y]
-        if c == 0.0:
-            r = 0.0
-        else:
-            r = 1.0 / c
-
+        r = 0.0 if c == 0.0 else 1.0 / c
         sdir = [(w2[y] * v1[x] - w1[y] * v2[x]) * r,
                 (w2[y] * v1[y] - w1[y] * v2[y]) * r,
                 (w2[y] * v1[z] - w1[y] * v2[z]) * r]

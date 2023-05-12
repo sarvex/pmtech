@@ -19,21 +19,20 @@ if __name__ == "__main__":
         for data_file in data_file_list:
             if data_file.endswith(".dep"):
                 continue
-            for dd in exclusive_data_dirs:
-                if data_file.startswith(dd):
-                    accepted_data_file_list.append(data_file)
+            accepted_data_file_list.extend(
+                data_file
+                for dd in exclusive_data_dirs
+                if data_file.startswith(dd)
+            )
         shared_data_dirs = [
             "data/configs/",
             "data/fonts/",
             "data/pmfx/",
             "data/scene/"
         ]
-        cmd_str = ""
-        for sd in shared_data_dirs:
-            cmd_str += "-s --preload-file " + sd + " "
+        cmd_str = "".join(f"-s --preload-file {sd} " for sd in shared_data_dirs)
         for df in accepted_data_file_list:
-            cmd_str += "-s --preload-file " + df + " "
+            cmd_str += f"-s --preload-file {df} "
         print(file)
-        output = open(os.path.basename(file), "w")
-        output.write(cmd_str)
-        output.close()
+        with open(os.path.basename(file), "w") as output:
+            output.write(cmd_str)

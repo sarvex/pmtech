@@ -22,7 +22,7 @@ material_attach_data_list = []
 material_symbol_list = []
 type_list = []
 joint_list = []
-joint_sid_list = dict()
+joint_sid_list = {}
 transform_list = []
 parent_list = []
 animations = []
@@ -31,9 +31,9 @@ materials = []
 
 
 def parse_visual_scenes(root):
-    for scene in root.iter(schema+'visual_scene'):
+    for scene in root.iter(f'{schema}visual_scene'):
         for child in scene:
-            if child.tag.find(schema+'node') != -1:
+            if child.tag.find(f'{schema}node') != -1:
                 parse_node(child, child)
     write_scene_file()
 
@@ -51,9 +51,9 @@ def axis_swap_transform(text):
             cval_x = val_x
             cval_y = val_z
             cval_z = val_y * -1.0
-        out_str = str(cval_x) + " " + str(cval_y) + " " + str(cval_z)
+        out_str = f"{cval_x} {cval_y} {cval_z}"
         if len(splitted) == 4:
-            out_str += " " + splitted[3]
+            out_str += f" {splitted[3]}"
     return out_str
 
 
@@ -64,14 +64,17 @@ def parse_node(node, parent_node):
     material_symbol_data = []
 
     for child in node:
-        if child.tag.find(schema+'instance_geometry') != -1 or child.tag.find(schema+'instance_controller') != -1:
+        if (
+            child.tag.find(f'{schema}instance_geometry') != -1
+            or child.tag.find(f'{schema}instance_controller') != -1
+        ):
             geom_attach_data = child.get('url')
             geom_attach_data = geom_attach_data.replace("-skin1", "")
             geom_attach_data = geom_attach_data.replace("-skin", "")
             geom_attach_data = geom_attach_data.replace("#geom-", "")
             geom_attach_data = geom_attach_data.replace("#", "")
             node_type = 2
-            for mat_node in child.iter(schema+'instance_material'):
+            for mat_node in child.iter(f'{schema}instance_material'):
                 material_target_corrected = mat_node.get('target').replace("#","")
                 material_target_corrected = material_target_corrected.replace("-material","")
                 material_attach_data.append(material_target_corrected)
@@ -95,18 +98,18 @@ def parse_node(node, parent_node):
     written_transforms = 0
     for child in node:
         if len(sub_transform_list) < 4:
-            if child.tag.find(schema+'matrix') != -1:
-                sub_transform_list.append("matrix " + helpers.correct_4x4matrix(child.text))
-            if child.tag.find(schema+'translate') != -1:
-                sub_transform_list.append("translate " + axis_swap_transform(child.text))
-            if child.tag.find(schema+'rotate') != -1:
-                sub_transform_list.append("rotate " + axis_swap_transform(child.text))
-        if child.tag.find(schema+'node') != -1:
+            if child.tag.find(f'{schema}matrix') != -1:
+                sub_transform_list.append(f"matrix {helpers.correct_4x4matrix(child.text)}")
+            if child.tag.find(f'{schema}translate') != -1:
+                sub_transform_list.append(f"translate {axis_swap_transform(child.text)}")
+            if child.tag.find(f'{schema}rotate') != -1:
+                sub_transform_list.append(f"rotate {axis_swap_transform(child.text)}")
+        if child.tag.find(f'{schema}node') != -1:
             if len(sub_transform_list) > 0:
                 written_transforms = 1
                 transform_list.append(sub_transform_list)
                 sub_transform_list = []
-            if child.get('type') == parent_node.get('type') or child.get('type') == "JOINT":
+            if child.get('type') in [parent_node.get('type'), "JOINT"]:
                 parse_node(child, node)
 
     if len(sub_transform_list) > 0:
@@ -124,12 +127,12 @@ def parse_dae():
     tree = ET.parse(file_path)
     root = tree.getroot()
 
-    for author_node in root.iter(schema+'authoring_tool'):
+    for author_node in root.iter(f'{schema}authoring_tool'):
         helpers.author = "Max"
         if author_node.text.find("Maya") != -1:
             helpers.author = "Maya"
 
-    for upaxis in root.iter(schema+'up_axis'):
+    for upaxis in root.iter(f'{schema}up_axis'):
         if upaxis.text == "Y_UP":
             helpers.author = "Maya"
         elif upaxis.text == "Z_UP":
@@ -160,11 +163,11 @@ def write_scene_file():
     num_nodes = len(joint_list)
     if num_nodes == 0:
         return
-    scene_data = [struct.pack("i", (int(helpers.version_number))),
-                  struct.pack("i", (int(num_nodes)))]
-    num_meshes = 0
-    for j in range(num_nodes):
-        num_meshes += int(len(material_attach_data_list[j]))
+    scene_data = [
+        struct.pack("i", (int(helpers.version_number))),
+        struct.pack("i", num_nodes),
+    ]
+    num_meshes = sum(len(material_attach_data_list[j]) for j in range(num_nodes))
     scene_data.append(struct.pack("i", num_meshes))
     for j in range(num_nodes):
         if joint_list[j] is None:
@@ -172,19 +175,21 @@ def write_scene_file():
         scene_data.append(struct.pack("i", (int(type_list[j]))))  # node type
         helpers.pack_parsable_string(scene_data, joint_list[j])
         helpers.pack_parsable_string(scene_data, geom_attach_data_list[j])
-        scene_data.append(struct.pack("i", (int(len(material_attach_data_list[j])))))
+        scene_data.append(struct.pack("i", len(material_attach_data_list[j])))
         for i in range(0, len(material_attach_data_list[j])):
             helpers.pack_parsable_string(scene_data, material_attach_data_list[j][i])
             helpers.pack_parsable_string(scene_data, material_symbol_list[j][i])
         parentindex = joint_list.index(parent_list[j])
         scene_data.append(struct.pack("i", (int(parentindex))))
-        scene_data.append(struct.pack("i", (int(len(transform_list[j])))))
+        scene_data.append(struct.pack("i", len(transform_list[j])))
         for t in transform_list[j]:
             splitted = t.split()
             transform_type_index = transform_types.index(splitted[0])
             scene_data.append(struct.pack("i", (int(transform_type_index))))
-            for val in range(1, len(splitted)):
-                scene_data.append(struct.pack("f", (float(splitted[val]))))
+            scene_data.extend(
+                struct.pack("f", (float(splitted[val])))
+                for val in range(1, len(splitted))
+            )
     helpers.output_file.scene.append(scene_data)
 
 
@@ -192,16 +197,18 @@ def write_joint_file():
     # write out joints
     if len(joint_list) == 0:
         return
-    joint_data = [struct.pack("i", (int(helpers.version_number))),
-                  struct.pack("i", (int(len(animations))))]
+    joint_data = [
+        struct.pack("i", (int(helpers.version_number))),
+        struct.pack("i", len(animations)),
+    ]
     # write out animations
     for animation_instance in animations:
         num_times = len(animation_instance.inputs)
         bone_index = int(animation_instance.bone_index)
         joint_data.append(struct.pack("i", bone_index))
-        joint_data.append(struct.pack("i", (int(num_times))))
-        joint_data.append(struct.pack("i", (int(len(animation_instance.translation_x)))))
-        joint_data.append(struct.pack("i", (int(len(animation_instance.rotation_x)))))
+        joint_data.append(struct.pack("i", num_times))
+        joint_data.append(struct.pack("i", len(animation_instance.translation_x)))
+        joint_data.append(struct.pack("i", len(animation_instance.rotation_x)))
         for t in range(len(animation_instance.inputs)):
             joint_data.append(struct.pack("f", (float(animation_instance.inputs[t]))))
             if len(animation_instance.translation_x) == num_times:
@@ -269,16 +276,18 @@ for file in file_list:
     # build different model formats
     if file.endswith(".obj"):
         dependency_inputs = get_dep_inputs([os.path.join(os.getcwd(), f)])
-        dependency_outputs = [depends_dest + ".pmm"]
+        dependency_outputs = [f"{depends_dest}.pmm"]
         dep = dependencies.create_dependency_info(dependency_inputs, dependency_outputs)
-        if not dependencies.check_up_to_date_single(depends_dest + ".pmm", dep):
+        if not dependencies.check_up_to_date_single(
+            f"{depends_dest}.pmm", dep
+        ):
             parse_obj.write_geometry(os.path.basename(file), root)
-            helpers.output_file.write(base_out_file + ".pmm")
+            helpers.output_file.write(f"{base_out_file}.pmm")
             if len(mesh_opt) > 0:
-                cmd = " -i " + base_out_file + ".pmm"
+                cmd = f" -i {base_out_file}.pmm"
                 p = subprocess.Popen(mesh_opt + cmd, shell=True)
                 p.wait()
-            dependencies.write_to_file_single(dep, depends_dest + ".dep")
+            dependencies.write_to_file_single(dep, f"{depends_dest}.dep")
     elif file.endswith(".dae"):
         joint_list = []
         transform_list = []
@@ -293,20 +302,22 @@ for file in file_list:
         image_list = []
         # create dep info
         dependency_inputs = get_dep_inputs([os.path.join(os.getcwd(), f)])
-        dependency_outputs = [depends_dest + ".pmm"]
+        dependency_outputs = [f"{depends_dest}.pmm"]
         dep = dependencies.create_dependency_info(dependency_inputs, dependency_outputs)
-        if not dependencies.check_up_to_date_single(depends_dest + ".dep", dep):
-            util.create_dir(base_out_file + ".pmm")
+        if not dependencies.check_up_to_date_single(
+            f"{depends_dest}.dep", dep
+        ):
+            util.create_dir(f"{base_out_file}.pmm")
             parse_dae()
-            helpers.output_file.write(base_out_file + ".pmm")
-            parse_animations.write_animation_file(base_out_file + ".pma")
+            helpers.output_file.write(f"{base_out_file}.pmm")
+            parse_animations.write_animation_file(f"{base_out_file}.pma")
             # apply optimisation
             if len(mesh_opt) > 0:
                 full_path = os.path.join(os.getcwd(), base_out_file)
-                cmd = " -i " + full_path + ".pmm"
+                cmd = f" -i {full_path}.pmm"
                 p = subprocess.Popen(mesh_opt + cmd, shell=True)
                 p.wait()
-            dependencies.write_to_file_single(dep, depends_dest + ".dep")
+            dependencies.write_to_file_single(dep, f"{depends_dest}.dep")
 
 
 

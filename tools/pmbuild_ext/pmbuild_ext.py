@@ -29,10 +29,7 @@ def tool_to_platform(tool):
 # ensure running with python3 or py -3
 def python_tool_to_platform(tool):
     tool = util.sanitize_file_path(tool)
-    if platform.system() == "Windows":
-        tool = "py -3 " + tool
-    else:
-        tool = "python3 " + tool
+    tool = f"py -3 {tool}" if platform.system() == "Windows" else f"python3 {tool}"
     return tool
 
 
@@ -50,9 +47,9 @@ def run_models(config, task_name, files):
     if os.path.exists(config["tools"]["mesh_opt"]):
         mesh_opt = config["tools"]["mesh_opt"]
     for f in files:
-        cmd = " -i " + f[0] + " -o " + os.path.dirname(f[1])
+        cmd = f" -i {f[0]} -o {os.path.dirname(f[1])}"
         if len(mesh_opt) > 0:
-            cmd += " -mesh_opt " + mesh_opt
+            cmd += f" -mesh_opt {mesh_opt}"
         x = threading.Thread(target=run_models_thread, args=(tool_cmd + cmd,))
         threads.append(x)
         x.start()
@@ -76,11 +73,10 @@ def run_cr(config, task_name):
         strings, source = cgu.placeholder_string_literals(source)
         functions, function_names = cgu.find_functions(source)
         for func in functions:
-            free = len(func["qualifier"]) == 0
-            for s in func["scope"]:
-                if s["type"] == "struct":
-                    free = False
-                    break
+            free = next(
+                (False for s in func["scope"] if s["type"] == "struct"),
+                len(func["qualifier"]) == 0,
+            )
             # cant add members
             if not free:
                 continue
@@ -96,7 +92,7 @@ def run_cr(config, task_name):
     code += cgu.src_line("#pragma once")
     for f in files:
         bn = os.path.basename(f)
-        code += cgu.src_line('#include ' + cgu.in_quotes(bn))
+        code += cgu.src_line(f'#include {cgu.in_quotes(bn)}')
 
     code += cgu.src_line("using namespace pen;")
     code += cgu.src_line("using namespace put;")
@@ -105,30 +101,30 @@ def run_cr(config, task_name):
     code += cgu.src_line("using namespace dbg;")
 
     # sort by immediate scope
-    scope_funcs = dict()
+    scope_funcs = {}
     for f in free_funcs:
         ff = f["file"]
         l = len(f["scope"])
         if l > 0:
             s = f["scope"][l-1]["name"]
             if s not in scope_funcs.keys():
-                scope_funcs[s] = list()
+                scope_funcs[s] = []
             scope_funcs[s].append(f)
 
     # add bindings grouped by scope
-    for scope in scope_funcs:
+    for scope, value in scope_funcs.items():
         # function pointer typedefs
-        for f in scope_funcs[scope]:
+        for f in value:
             args = cgu.get_funtion_prototype(f)
             code += cgu.src_line("typedef " + f["return_type"] + " (*proc_" + f["name"] + ")" + args + ";")
         # struct
-        struct_name = "__" + scope
-        code += cgu.src_line("struct " + struct_name + " {")
-        code += cgu.src_line("void* " + struct_name + "_start;")
+        struct_name = f"__{scope}"
+        code += cgu.src_line(f"struct {struct_name}" + " {")
+        code += cgu.src_line(f"void* {struct_name}_start;")
         # function pointers members
         for f in scope_funcs[scope]:
             code += cgu.src_line("proc_" + f["name"] + " " + f["name"] + ";")
-        code += cgu.src_line("void* " + struct_name + "_end;")
+        code += cgu.src_line(f"void* {struct_name}_end;")
         code += cgu.src_line("};")
 
     # pointers to contexts
@@ -136,22 +132,23 @@ def run_cr(config, task_name):
     for scope in scope_funcs:
         if len(inherit) > 0:
             inherit += ", "
-        inherit += "public __" + scope
+        inherit += f"public __{scope}"
     code += cgu.src_line("struct live_context:")
     code += cgu.src_line(inherit + "{")
     code += cgu.src_line("f32 dt;")
     code += cgu.src_line("ecs::ecs_scene* scene;")
     for scope in scope_funcs:
-        code += cgu.src_line("__" + scope + "* " + scope + "_funcs;")
+        code += cgu.src_line(f"__{scope}* {scope}_funcs;")
     code += cgu.src_line("live_context() {")
     # bind function pointers to addresses
     code += cgu.src_line("#if !DLL")
-    for scope in scope_funcs:
-        for f in scope_funcs[scope]:
-            full_scope = ""
-            for q in f["scope"]:
-                if q["type"] == "namespace":
-                    full_scope += q["name"] + "::"
+    for value_ in scope_funcs.values():
+        for f in value_:
+            full_scope = "".join(
+                q["name"] + "::"
+                for q in f["scope"]
+                if q["type"] == "namespace"
+            )
             code += cgu.src_line(f["name"] + " = &" + full_scope + f["name"] + ";")
     code += cgu.src_line("#endif")
     code += cgu.src_line("}")
@@ -163,5 +160,3 @@ def run_cr(config, task_name):
 
 
 # entry point of pmbuild_ext
-if __name__ == "__main__":
-    pass
